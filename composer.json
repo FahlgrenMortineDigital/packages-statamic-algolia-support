@@ -42,7 +42,7 @@
         },
         "laravel": {
             "providers": [
-                "Fahlgrendigital\\PackagesStatamicAlgoliaSupport\\AlgoliaServiceProvider"
+                "Fahlgrendigital\\PackagesStatamicAlgoliaSupport\\StatamicAlgoliaSupportProvider"
             ]
         }
     }
