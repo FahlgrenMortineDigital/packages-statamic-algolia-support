@@ -12,8 +12,8 @@ class StatamicAlgoliaSupportProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureConsole();
-
         $this->configureRoutes();
+        $this->publishConfig();
     }
 
     private function configureConsole(): void
@@ -34,5 +34,12 @@ class StatamicAlgoliaSupportProvider extends ServiceProvider
              ->group(function () use ($api_uri) {
                  Route::get("$api_uri/{index}", AlgoliaIndexConnectorController::class);
              });
+    }
+
+    private function publishConfig(): void
+    {
+        $this->publishes([
+            __DIR__ . '/../config/algolia-support.php' => config_path('algolia-support.php'),
+        ], 'statamic-algolia-support-config');
     }
 }
