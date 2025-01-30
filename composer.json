@@ -1,5 +1,5 @@
 {
-    "version": "0.0.2",
+    "version": "0.0.3",
     "name": "fahlgrendigital/packages-statamic-algolia-support",
     "description": "Support for the Algolia driver in Statamic applications.",
     "type": "composer-plugin",
