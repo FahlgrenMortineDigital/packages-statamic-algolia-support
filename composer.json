@@ -34,5 +34,16 @@
         "allow-plugins": {
             "pixelfear/composer-dist-plugin": true
         }
+    },
+    "extra": {
+        "statamic": {
+            "name": "Algolia Support",
+            "description": "Support for the Algolia driver in Statamic applications."
+        },
+        "laravel": {
+            "providers": [
+                "Fahlgrendigital\\PackagesStatamicAlgoliaSupport\\AlgoliaServiceProvider"
+            ]
+        }
     }
 }
