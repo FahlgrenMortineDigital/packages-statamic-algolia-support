@@ -1,0 +1,15 @@
+# Dev
+.idea
+
+# Vendor
+vendor
+
+# Composer
+composer.lock
+
+# Testing
+.phpunit.result.cache
+
+node_modules
+
+resources/dist/hot
