@@ -1,5 +1,4 @@
 {
-    "version": "0.0.5",
     "name": "fahlgrendigital/packages-statamic-algolia-support",
     "description": "Support for the Algolia driver in Statamic applications.",
     "license": "MIT",
