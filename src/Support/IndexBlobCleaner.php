@@ -15,8 +15,9 @@ class IndexBlobCleaner
 
         $index_files = collect(Storage::disk($disk)->files())->filter(function ($file) use ($index, $file_type) {
             $file_name = collect(explode('/', $file))->last();
+            $pattern = "/^search-index-$index-\d+\.$file_type$/";
 
-            return Str::startsWith($file_name, "search-index-$index") && Str::endsWith($file_name, ".$file_type");
+            return preg_match($pattern, $file_name);
         })->sortDesc();
 
         if ($index_files->count() > static::$window) {
