@@ -10,7 +10,7 @@ class AlgoliaIndexConnectorController extends Controller
 {
     public function __invoke($index): \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\JsonResponse
     {
-        $exists = array_key_exists($index, config('statamic.search.indexes')) || array_key_exists($index, config('statamic.search.computed_indexes'));
+        $exists = array_key_exists($index, config('statamic.search.indexes')) || array_key_exists($index, config('algolia-support.computed_indexes'));
         $index_disk = config('algolia-support.disk');
 
         if(!$exists) {

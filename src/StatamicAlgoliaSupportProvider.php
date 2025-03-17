@@ -2,6 +2,7 @@
 
 namespace Fahlgrendigital\PackagesStatamicAlgoliaSupport;
 
+use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Console\Commands\AlgoliaBuildComputedIndexes;
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Console\Commands\AlgoliaIndexExportBuilder;
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Http\Controllers\AlgoliaIndexConnectorController;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,7 @@ class StatamicAlgoliaSupportProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 AlgoliaIndexExportBuilder::class,
+                AlgoliaBuildComputedIndexes::class
             ]);
         }
     }
