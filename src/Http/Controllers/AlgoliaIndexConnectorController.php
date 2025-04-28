@@ -4,7 +4,6 @@ namespace Fahlgrendigital\PackagesStatamicAlgoliaSupport\Http\Controllers;
 
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class AlgoliaIndexConnectorController extends Controller
 {
@@ -19,8 +18,9 @@ class AlgoliaIndexConnectorController extends Controller
 
         $most_recent = collect(Storage::disk($index_disk)->files())->filter(function ($file) use($index) {
             $file_name = collect(explode('/', $file))->last();
+            $pattern = "/^search-index-$index-\d+\.json$/";
 
-            return Str::startsWith($file_name, "search-index-$index") && Str::endsWith($file_name, '.json');
+            return preg_match($pattern, $file_name);
         })->sortDesc()->first();
 
         if(!$most_recent) {
