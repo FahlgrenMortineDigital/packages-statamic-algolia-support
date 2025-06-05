@@ -52,3 +52,28 @@ This package offers a simple index builder for creating Algolia indexes in your 
 a laravel filesystem disk to store your indexes in. This is useful for keeping your indexes in sync across multiple
 algolia environments. Statamic will automagically handle saving CRUD operations for configured index sources in Algolia,
 and the index builder is designed to handle cases where you want to do an entire index update within Algolia.
+
+**Commands**
+
+```shell
+$ php artisan algolia:search-index:build-file {index} -T json/csv -D --json-stats
+``` 
+
+* `{index}` - The index to build.
+* `-T` - The type of file to build. Options are `json` or `csv`.
+* `-D` - Whether to do a dry run.
+* `--json-stats` - Whether to output the stats in for a JSON index export (max, min, avg size).
+
+```shell
+$ php artisan algolia:build-computed-indexes
+```
+
+This command loops through the configured compound indexes in your `config/statamic-algolia-support.php` file and builds them.
+
+**Example**
+
+```php
+'computed_indexes' => [
+    'my_index' => ['first_index', 'second_index'],
+]
+```
