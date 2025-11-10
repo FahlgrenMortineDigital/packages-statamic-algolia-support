@@ -38,6 +38,11 @@ class AlgoliaIndexExportBuilder extends Command
     {
         $disk = config('algolia-support.disk');
 
+        if(!config("filesystems.disks.$disk")) {
+            $this->error("The configured disk '$disk' does not exist in your filesystems configuration.");
+            return SymfonyCommand::FAILURE;
+        }
+
         @ini_set('memory_limit', config('algolia-search.memory_limit'));
 
         $index_key  = $this->argument('index');
