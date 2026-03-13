@@ -43,7 +43,7 @@ class AlgoliaIndexExportBuilder extends Command
             return SymfonyCommand::FAILURE;
         }
 
-        @ini_set('memory_limit', config('algolia-search.memory_limit'));
+        @ini_set('memory_limit', config('algolia-support.memory_limit'));
 
         $index_key  = $this->argument('index');
         $file_type  = $this->option('file-type');

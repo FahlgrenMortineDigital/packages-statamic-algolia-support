@@ -68,13 +68,12 @@ Routes are registered in `StatamicAlgoliaSupportProvider::configureRoutes()` usi
 ### TaxonomyTransformer — entry type check
 Uses `Statamic\Contracts\Entries\Entry` (the interface) for the `instanceof` check so it works with both flat-file entries (`Statamic\Entries\Entry`) and Eloquent entries (`Statamic\Eloquent\Entries\Entry`). Do **not** change this back to a concrete class import.
 
-### AlgoliaBuildComputedIndexes — Algolia PHP client v3 API
-This command uses the v3 API surface:
-- `SearchClient::create($appId, $apiKey)`
-- `$client->initIndex($indexName)`
-- `$_index->browseObjects()`
+### AlgoliaBuildComputedIndexes — Algolia PHP client v4 API
+This command uses the v4 API (`Algolia\AlgoliaSearch\Api\SearchClient`):
+- `SearchClient::create($appId, $apiKey)` — same as v3
+- `$client->browseObjects($indexName)` — replaces v3's `initIndex()->browseObjects()`
 
-These APIs do **not** exist in v4. If the Algolia PHP client is upgraded to v4, this command must be rewritten using the new `\Algolia\AlgoliaSearch\Api\SearchClient` and `searchIndex()->browseObjects()` patterns.
+Do **not** revert to the v3 `initIndex()` pattern; it no longer exists in v4, and Statamic 6 conflicts with client versions below 4.32.
 
 ### AlgoliaIndexExportBuilder — JSON file format
 The command appends one JSON-encoded array per searchable collection chunk using `Storage::disk()->append()`. The resulting file is **not** a single JSON array — it is multiple JSON arrays concatenated, one per chunk. Downstream consumers must handle this format.
@@ -83,7 +82,7 @@ The command appends one JSON-encoded array per searchable collection chunk using
 The `algolia-support.disk` config value must match a disk name in `config/filesystems.php`. Both commands validate this at startup and exit with a failure code if the disk is missing.
 
 ### Memory limit
-The builder command sets `memory_limit` from `config('algolia-search.memory_limit')` — note: this is `algolia-search` (with a hyphen after `algolia`), not `algolia-support`. This appears to be a typo/inconsistency in the original code — it should likely be `algolia-support.memory_limit`. Be aware of this if debugging memory issues.
+The builder command reads `config('algolia-support.memory_limit')` and applies it via `ini_set`. The default is `2028M` in `config/algolia-support.php`.
 
 ---
 
@@ -97,7 +96,7 @@ The builder command sets `memory_limit` from `config('algolia-search.memory_limi
 ### Statamic 6 specific notes
 - **Carbon 3**: `DateTransformer` uses `Carbon::format()` which is unchanged in Carbon 3. No action needed, but be aware that Statamic 6 dates now default to UTC.
 - **`searchables: all` removed**: This package does not set this option. Users upgrading must update their `config/statamic/search.php` to use `'content'` or an explicit list.
-- **Algolia PHP client**: Statamic 6's built-in Algolia driver may require client v4. The `AlgoliaBuildComputedIndexes` command would need to be updated if so.
+- **Algolia PHP client v4**: Statamic 6 conflicts with client versions `<4.32`. This package requires `^4.32` on this branch. `AlgoliaBuildComputedIndexes` has been updated to the v4 API.
 
 ---
 
