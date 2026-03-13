@@ -2,7 +2,7 @@
 
 namespace Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers;
 
-use Statamic\Eloquent\Entries\Entry;
+use Statamic\Contracts\Entries\Entry as EntryContract;
 use Statamic\Facades\Term;
 use Statamic\Taxonomies\LocalizedTerm;
 
@@ -10,7 +10,7 @@ class TaxonomyTransformer
 {
     public function handle($value, $field, $searchable): ?array
     {
-        if (!$searchable instanceof Entry) { // only processing Entry instances
+        if (!$searchable instanceof EntryContract) { // only processing Entry instances
             return null;
         }
 
