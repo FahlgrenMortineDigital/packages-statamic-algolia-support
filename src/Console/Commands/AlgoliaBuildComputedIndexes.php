@@ -37,10 +37,7 @@ class AlgoliaBuildComputedIndexes extends Command
         foreach ($computedIndexes as $index => $config) {
             $this->info("> Building [{$index}]");
 
-            $client = SearchClient::create(
-                config('statamic.search.drivers.algolia.credentials.id'),
-                config('statamic.search.drivers.algolia.credentials.secret')
-            );
+            $client = $this->makeSearchClient();
             $fileName = "search-index-$index-" . now()->timestamp . ".json";
             $handle = Storage::disk($disk)->path($fileName);
             $file = fopen($handle, 'w');
@@ -76,5 +73,13 @@ class AlgoliaBuildComputedIndexes extends Command
         }
 
         return \Symfony\Component\Console\Command\Command::SUCCESS;
+    }
+
+    protected function makeSearchClient()
+    {
+        return SearchClient::create(
+            config('statamic.search.drivers.algolia.credentials.id'),
+            config('statamic.search.drivers.algolia.credentials.secret')
+        );
     }
 }
