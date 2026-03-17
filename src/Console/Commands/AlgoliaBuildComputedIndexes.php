@@ -2,7 +2,7 @@
 
 namespace Fahlgrendigital\PackagesStatamicAlgoliaSupport\Console\Commands;
 
-use Algolia\AlgoliaSearch\SearchClient;
+use Algolia\AlgoliaSearch\Api\SearchClient;
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Support\IndexBlobCleaner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
@@ -37,10 +37,7 @@ class AlgoliaBuildComputedIndexes extends Command
         foreach ($computedIndexes as $index => $config) {
             $this->info("> Building [{$index}]");
 
-            $client = SearchClient::create(
-                config('statamic.search.drivers.algolia.credentials.id'),
-                config('statamic.search.drivers.algolia.credentials.secret')
-            );
+            $client = $this->makeSearchClient();
             $fileName = "search-index-$index-" . now()->timestamp . ".json";
             $handle = Storage::disk($disk)->path($fileName);
             $file = fopen($handle, 'w');
@@ -53,9 +50,8 @@ class AlgoliaBuildComputedIndexes extends Command
 
             foreach($config['sources'] as $indexName) {
                 $this->info("> Fetching data from [{$indexName}]");
-                $_index = $client->initIndex($indexName);
 
-                foreach ($_index->browseObjects() as $hit) {
+                foreach ($client->browseObjects($indexName) as $hit) {
                     if (!$first) {
                         fwrite($file, ","); // Add comma for JSON structure
                     }
@@ -77,5 +73,13 @@ class AlgoliaBuildComputedIndexes extends Command
         }
 
         return \Symfony\Component\Console\Command\Command::SUCCESS;
+    }
+
+    protected function makeSearchClient()
+    {
+        return SearchClient::create(
+            config('statamic.search.drivers.algolia.credentials.id'),
+            config('statamic.search.drivers.algolia.credentials.secret')
+        );
     }
 }
