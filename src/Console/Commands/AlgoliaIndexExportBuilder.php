@@ -5,11 +5,15 @@ namespace Fahlgrendigital\PackagesStatamicAlgoliaSupport\Console\Commands;
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Index\IndexAnalysis;
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Support\IndexBlobCleaner;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\LazyCollection;
 use League\Csv\Writer;
 use Statamic\Contracts\Search\Searchable;
 use Statamic\Facades\Search;
 use Statamic\Search\Index;
+use Statamic\Search\Searchables\Providers;
+use Statamic\Support\Str;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 class AlgoliaIndexExportBuilder extends Command
@@ -79,10 +83,11 @@ class AlgoliaIndexExportBuilder extends Command
         $bar                = $this->output->createProgressBar($count);
 
         if ($file_type === 'csv' && !$is_dry_run) {
+            $firstItem = $this->resolveReferences(collect([$searchables_master->first()->first()]))->first();
             $writer->insertOne(
                 array_merge(
                     ['objectID'],
-                    array_keys($index->searchables()->fields($searchables_master->first()->first()))
+                    array_keys($index->searchables()->fields($firstItem))
                 )
             );
         }
@@ -91,7 +96,8 @@ class AlgoliaIndexExportBuilder extends Command
 
         $bar->start();
 
-        $searchables_master->each(function ($collection) use ($index, $bar, $file_type, $path, $is_dry_run, $writer, $file_name, $disk) {
+        $searchables_master->each(function ($references) use ($index, $bar, $file_type, $path, $is_dry_run, $writer, $file_name, $disk) {
+            $collection = $this->resolveReferences($references);
             $documents = $collection->map(function (Searchable $item) use ($index, $bar) {
                 $data             = $index->searchables()->fields($item);
                 $data['objectID'] = $item->getSearchReference();
@@ -130,5 +136,19 @@ class AlgoliaIndexExportBuilder extends Command
         }
 
         return SymfonyCommand::SUCCESS;
+    }
+
+    private function resolveReferences(Collection|LazyCollection $references): Collection|LazyCollection
+    {
+        $providers = app(Providers::class);
+
+        return $references
+            ->groupBy(fn ($reference) => explode('::', $reference)[0])
+            ->flatMap(function ($refs, $prefix) use ($providers) {
+                return $providers
+                    ->getByPrefix($prefix)
+                    ->find($refs->map(fn ($ref) => Str::after($ref, '::'))->all())
+                    ->all();
+            });
     }
 }
