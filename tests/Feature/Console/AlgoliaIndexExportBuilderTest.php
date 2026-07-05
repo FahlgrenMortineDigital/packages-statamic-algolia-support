@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Storage;
 use Statamic\Contracts\Search\Result;
 use Statamic\Contracts\Search\Searchable;
 use Statamic\Search\Search as SearchManager;
+use Statamic\Search\Searchables\Providers;
 
 it('fails when configured disk does not exist', function () {
     config()->set('algolia-support.disk', 'missing-disk');
@@ -57,6 +58,46 @@ it('builds a json export file for a valid index', function () {
         ->and($searchables->fieldsCalls)->toBeGreaterThanOrEqual(2);
 });
 
+it('builds a json export file from multiple searchable groups', function () {
+    Storage::fake('algolia-indexes');
+    $disk = Mockery::spy(Storage::disk('algolia-indexes'));
+    Storage::set('algolia-indexes', $disk);
+
+    config()->set('statamic.search.indexes', ['posts' => []]);
+
+    [$index] = makeFakeSearchIndexWithSearchables([
+        ['objectID' => 'entry::1', 'title' => 'First'],
+        ['objectID' => 'entry::2', 'title' => 'Second'],
+    ], [1, 1]);
+
+    app()->instance(SearchManager::class, new class($index) {
+        public function __construct(private object $index)
+        {
+        }
+
+        public function index(string $key): object
+        {
+            return $this->index;
+        }
+    });
+
+    $this->artisan('algolia:search-index:build-file', [
+        'index' => 'posts',
+        '--file-type' => 'json',
+    ])->assertSuccessful();
+
+    $file = collect(Storage::disk('algolia-indexes')->files())
+        ->first(fn (string $file) => preg_match('/^search-index-posts-\d+\.json$/', $file));
+    $chunks = explode(PHP_EOL, Storage::disk('algolia-indexes')->get($file));
+
+    expect($chunks)->toHaveCount(2)
+        ->and(json_decode($chunks[0], true)[0]['objectID'])->toBe('entry::1')
+        ->and(json_decode($chunks[1], true)[0]['objectID'])->toBe('entry::2');
+
+    $disk->shouldHaveReceived('put')->once();
+    $disk->shouldNotHaveReceived('append');
+});
+
 it('does not write files in dry run mode', function () {
     Storage::fake('algolia-indexes');
     config()->set('statamic.search.indexes', ['posts' => []]);
@@ -85,7 +126,7 @@ it('does not write files in dry run mode', function () {
     expect(Storage::disk('algolia-indexes')->files())->toBeEmpty();
 });
 
-function makeFakeSearchIndexWithSearchables(array $documents): array
+function makeFakeSearchIndexWithSearchables(array $documents, ?array $groupSizes = null): array
 {
     $items = collect($documents)->map(function (array $document) {
         return new class($document['objectID']) implements Searchable {
@@ -114,16 +155,50 @@ function makeFakeSearchIndexWithSearchables(array $documents): array
         return [$document['objectID'] => collect($document)->except('objectID')->all()];
     })->all();
 
-    $searchables = new class($items, $fieldsByObjectId) {
+    app()->instance(Providers::class, new class($items->keyBy->getSearchReference()) extends Providers {
+        public function __construct(private \Illuminate\Support\Collection $items)
+        {
+        }
+
+        public function getByPrefix(string $prefix)
+        {
+            return new class($this->items, $prefix) {
+                public function __construct(
+                    private \Illuminate\Support\Collection $items,
+                    private string $prefix,
+                ) {
+                }
+
+                public function find(array $references): \Illuminate\Support\Collection
+                {
+                    return collect($references)
+                        ->map(fn (string $reference) => $this->items->get($this->prefix.'::'.$reference))
+                        ->filter();
+                }
+            };
+        }
+    });
+
+    $references = $items->map->getSearchReference();
+    $groups = $groupSizes === null
+        ? collect([$references])
+        : collect($groupSizes)->map(function (int $size) use (&$references) {
+            $group = $references->take($size);
+            $references = $references->slice($size);
+
+            return $group;
+        });
+
+    $searchables = new class($groups, $fieldsByObjectId) {
         public int $fieldsCalls = 0;
 
-        public function __construct(private \Illuminate\Support\Collection $items, private array $fieldsByObjectId)
+        public function __construct(private \Illuminate\Support\Collection $groups, private array $fieldsByObjectId)
         {
         }
 
         public function lazy()
         {
-            return collect([$this->items]);
+            return $this->groups;
         }
 
         public function fields(Searchable $searchable): array

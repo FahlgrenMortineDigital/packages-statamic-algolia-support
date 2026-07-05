@@ -54,8 +54,9 @@ class AlgoliaIndexExportBuilder extends Command
         $is_dry_run = $this->option('dry-run');
         $json_stats = $this->option('json-stats');
         $indexes    = array_keys(config('statamic.search.indexes'));
-        $path       = Storage::disk($disk)->path('');
-        $writer     = null;
+        $path        = Storage::disk($disk)->path('');
+        $writer      = null;
+        $json_stream = null;
 
         while (!in_array($file_type, $this->file_types)) {
             $file_type = $this->choice('File export type', $this->file_types);
@@ -69,7 +70,14 @@ class AlgoliaIndexExportBuilder extends Command
         $path      = sprintf("%s%s", $path, $file_name);
 
         if ($file_type === 'csv' && !$is_dry_run) {
-            $writer = Writer::createFromPath($path, 'w');
+            $writer = Writer::from($path, 'w');
+        } else if ($file_type === 'json' && !$is_dry_run) {
+            $json_stream = tmpfile();
+
+            if ($json_stream === false) {
+                $this->error('Unable to create a temporary stream for the JSON export.');
+                return SymfonyCommand::FAILURE;
+            }
         }
 
         $this->info("> Augmenting searchable document list...");
@@ -96,25 +104,44 @@ class AlgoliaIndexExportBuilder extends Command
 
         $bar->start();
 
-        $searchables_master->each(function ($references) use ($index, $bar, $file_type, $path, $is_dry_run, $writer, $file_name, $disk) {
-            $collection = $this->resolveReferences($references);
-            $documents = $collection->map(function (Searchable $item) use ($index, $bar) {
-                $data             = $index->searchables()->fields($item);
-                $data['objectID'] = $item->getSearchReference();
+        $is_first_json_chunk = true;
 
-                $bar->advance();
+        try {
+            $searchables_master->each(function ($references) use ($index, $bar, $file_type, $is_dry_run, $writer, $json_stream, &$is_first_json_chunk) {
+                $collection = $this->resolveReferences($references);
+                $documents = $collection->map(function (Searchable $item) use ($index, $bar) {
+                    $data             = $index->searchables()->fields($item);
+                    $data['objectID'] = $item->getSearchReference();
 
-                return $data;
+                    $bar->advance();
+
+                    return $data;
+                });
+
+                if ($file_type === 'json' && !$is_dry_run) {
+                    $json = json_encode($documents->all(), JSON_THROW_ON_ERROR);
+                    $this->writeToStream($json_stream, ($is_first_json_chunk ? '' : PHP_EOL) . $json);
+                    $is_first_json_chunk = false;
+                } else if ($file_type === 'csv' && !$is_dry_run) {
+                    $documents->each(function ($values) use ($writer) {
+                        $writer->insertOne($values);
+                    });
+                }
             });
 
-            if ($file_type === 'json' && !$is_dry_run) {
-                Storage::disk($disk)->append($file_name, json_encode($documents->all()));
-            } else if ($file_type === 'csv' && !$is_dry_run) {
-                $documents->each(function ($values) use ($writer) {
-                    $writer->insertOne($values);
-                });
+            if ($json_stream !== null && !$is_first_json_chunk) {
+                rewind($json_stream);
+
+                if (!Storage::disk($disk)->put($file_name, $json_stream)) {
+                    $this->error("Unable to write the JSON export file '$file_name'.");
+                    return SymfonyCommand::FAILURE;
+                }
             }
-        });
+        } finally {
+            if (is_resource($json_stream)) {
+                fclose($json_stream);
+            }
+        }
 
         $bar->finish();
         $this->output->newLine();
@@ -150,5 +177,17 @@ class AlgoliaIndexExportBuilder extends Command
                     ->find($refs->map(fn ($ref) => Str::after($ref, '::'))->all())
                     ->all();
             });
+    }
+
+    /**
+     * @param resource $stream
+     */
+    private function writeToStream($stream, string $data): void
+    {
+        $bytes_written = fwrite($stream, $data);
+
+        if ($bytes_written === false || $bytes_written !== strlen($data)) {
+            throw new \RuntimeException('Unable to write the JSON export to the temporary stream.');
+        }
     }
 }
