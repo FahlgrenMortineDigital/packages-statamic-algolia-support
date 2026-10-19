@@ -265,7 +265,13 @@ class AlgoliaApplySettings extends Command
             $this->line('    + ' . $this->json($value));
         }
 
-        $client->setSettings($name, $changed, false);
+        // Algolia applies settings asynchronously. Replicas are created from the
+        // primary's task, so the next call must wait for this one to finish.
+        $task = $this->normalize($client->setSettings($name, $changed, false));
+
+        if (isset($task['taskID'])) {
+            $client->waitForTask($name, $task['taskID']);
+        }
     }
 
     private function currentSettings(object $client, string $name): array

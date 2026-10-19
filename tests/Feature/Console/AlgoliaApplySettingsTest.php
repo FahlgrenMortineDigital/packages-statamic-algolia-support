@@ -16,6 +16,9 @@ class FakeSettingsClient
     public array $indexes = [];
     public array $calls = [];
     public int $records = 0;
+    private int $lastTask = 0;
+    /** @var array<int, string> Index that owns each task still pending. */
+    private array $pending = [];
 
     public function getSettings(string $name): array
     {
@@ -31,8 +34,11 @@ class FakeSettingsClient
         $isNew = ! isset($this->indexes[$name]);
         $this->indexes[$name] = array_replace($this->indexes[$name] ?? [], $settings);
 
+        $task = ['taskID' => ++$this->lastTask];
+        $this->pending[$task['taskID']] = $name;
+
         if (! $isNew || ! isset($settings['replicas'])) {
-            return [];
+            return $task;
         }
 
         $inherited = array_diff_key($settings, ['replicas' => 1]);
@@ -45,7 +51,25 @@ class FakeSettingsClient
             }
         }
 
-        return [];
+        return $task;
+    }
+
+    public function waitForTask(string $name, int $taskId): array
+    {
+        $this->calls[] = ['waitForTask', $name, $taskId];
+
+        if (($this->pending[$taskId] ?? null) !== $name) {
+            throw new RuntimeException("Task {$taskId} does not belong to {$name}.");
+        }
+
+        unset($this->pending[$taskId]);
+
+        return ['status' => 'published'];
+    }
+
+    public function pendingTasks(): array
+    {
+        return $this->pending;
     }
 
     public function searchSingleIndex(string $name, array $params): array
@@ -261,4 +285,41 @@ it('skips non-algolia indexes when no argument is given', function () {
     runApplySettings($client)->assertSuccessful();
 
     expect($client->indexes)->not->toHaveKey('local_one');
+});
+
+it('waits for each setSettings task before the next call', function () {
+    defineContentIndex();
+    $client = new FakeSettingsClient();
+
+    runApplySettings($client, ['index' => 'content'])->assertSuccessful();
+
+    $sequence = array_values(array_filter(
+        $client->calls,
+        fn ($c) => in_array($c[0], ['setSettings', 'waitForTask'], true)
+    ));
+
+    // setSettings is always followed by the wait for its own task: primary, then each replica.
+    expect($sequence)->not->toBeEmpty();
+    expect(count($sequence) % 2)->toBe(0);
+
+    foreach (array_chunk($sequence, 2) as [$write, $wait]) {
+        expect($write[0])->toBe('setSettings');
+        expect($wait[0])->toBe('waitForTask');
+        expect($wait[1])->toBe($write[1]);
+    }
+
+    expect(array_column(array_column(array_chunk($sequence, 2), 0), 1))
+        ->toBe(['content', 'title_asc', 'date_desc']);
+    expect($client->pendingTasks())->toBe([]);
+});
+
+it('does not wait when nothing changed', function () {
+    defineContentIndex();
+    $client = new FakeSettingsClient();
+
+    runApplySettings($client, ['index' => 'content'])->assertSuccessful();
+    $client->calls = [];
+    runApplySettings($client, ['index' => 'content'])->assertSuccessful();
+
+    expect(array_column($client->calls, 0))->not->toContain('waitForTask');
 });
