@@ -126,6 +126,51 @@ it('does not write files in dry run mode', function () {
     expect(Storage::disk('algolia-indexes')->files())->toBeEmpty();
 });
 
+function bindFakeSearchManager(object $index): void
+{
+    app()->instance(SearchManager::class, new class($index) {
+        public function __construct(private object $index)
+        {
+        }
+
+        public function index(string $key): object
+        {
+            return $this->index;
+        }
+    });
+}
+
+it('prints stats for a multi-provider export', function () {
+    Storage::fake('algolia-indexes');
+    config()->set('statamic.search.indexes', ['posts' => []]);
+
+    [$index] = makeFakeSearchIndexWithSearchables([
+        ['objectID' => 'entry::1', 'title' => 'First'],
+        ['objectID' => 'entry::2', 'title' => 'Second'],
+    ], [1, 1]);
+    bindFakeSearchManager($index);
+
+    $this->artisan('algolia:search-index:build-file', [
+        'index' => 'posts',
+        '--file-type' => 'json',
+        '--json-stats' => true,
+    ])->assertSuccessful()->expectsOutputToContain('maxSize (kb)');
+});
+
+it('skips stats for an empty export', function () {
+    Storage::fake('algolia-indexes');
+    config()->set('statamic.search.indexes', ['posts' => []]);
+
+    [$index] = makeFakeSearchIndexWithSearchables([]);
+    bindFakeSearchManager($index);
+
+    $this->artisan('algolia:search-index:build-file', [
+        'index' => 'posts',
+        '--file-type' => 'json',
+        '--json-stats' => true,
+    ])->assertSuccessful()->expectsOutputToContain('Skipping stats');
+});
+
 function makeFakeSearchIndexWithSearchables(array $documents, ?array $groupSizes = null): array
 {
     $items = collect($documents)->map(function (array $document) {

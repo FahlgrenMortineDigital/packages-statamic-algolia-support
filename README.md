@@ -2,7 +2,7 @@
 
 Add helpful support classes for working with the Algolia driver in Statamic applications.
 
-**Compatibility:** Statamic 5.x and 6.x | Laravel 11.x and 12.x | PHP 8.3+
+**Compatibility:** Statamic 5.x and 6.x | Laravel 11.x, 12.x and 13.x | PHP 8.3+
 
 # Installation
 
@@ -28,7 +28,7 @@ This package focuses on three areas of support for the Algolia driver in Statami
 
 ## Transformers
 
-Transformers are Statamic [search transformers](https://statamic.dev/search#transforming-fields) that convert complex Statamic field types into Algolia-compatible formats. Register them in your `config/statamic/search.php` under a field's `transformer` key.
+Transformers are Statamic [search transformers](https://statamic.dev/search#transforming-fields) that convert complex Statamic field types into Algolia-compatible formats. Register them in your `config/statamic/search.php`. Statamic reads `fields` as a flat list of field handles and `transformers` as a map of field handle to class.
 
 ### CollectionTransformer
 
@@ -38,8 +38,9 @@ Extracts the `handle` string from a collection object. Useful for configuring Al
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\CollectionTransformer;
 
 // In config/statamic/search.php
-'fields' => [
-    'collection' => ['transformer' => CollectionTransformer::class],
+'fields' => ['collection'],
+'transformers' => [
+    'collection' => CollectionTransformer::class,
 ],
 ```
 
@@ -54,8 +55,9 @@ Converts a Carbon date object into a formatted date string (`Y-m-d H:i:s`). Comp
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\DateTransformer;
 
-'fields' => [
-    'date' => ['transformer' => DateTransformer::class],
+'fields' => ['date'],
+'transformers' => [
+    'date' => DateTransformer::class,
 ],
 ```
 
@@ -102,8 +104,9 @@ Strips HTML from Bard and Textarea fields, returning plain searchable text. For 
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\MarkupTransformer;
 
-'fields' => [
-    'content' => ['transformer' => MarkupTransformer::class], // Bard or Textarea
+'fields' => ['content'],
+'transformers' => [
+    'content' => MarkupTransformer::class, // Bard or Textarea
 ],
 ```
 
@@ -120,24 +123,26 @@ Works with both flat-file entries and Eloquent entries.
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\TaxonomyTransformer;
 
-'fields' => [
-    'tags' => ['transformer' => TaxonomyTransformer::class],
+'fields' => ['tags'],
+'transformers' => [
+    'tags' => TaxonomyTransformer::class,
 ],
 ```
 
-**Returns:** `array|null` — `['tags' => [['id' => ..., 'slug' => ..., 'title' => ...], ...]]`, or `null` for non-entry searchables, or `[]` for entries with no terms.
+**Returns:** `array|null` — `['tags' => [['id' => ..., 'slug' => ..., 'title' => ...], ...]]`, or `null` for non-entry searchables. Entries with no terms return `[]`, which Statamic spreads into the record, so the record gets no attribute.
 
 ---
 
 ### RecordUrlTransformer
 
-Generates the URL for an Entry or Asset searchable. Returns `null` for other searchable types (e.g. taxonomy terms).
+Generates the URL for an Entry or Asset searchable. Entries are matched on the `Statamic\Contracts\Entries\Entry` contract, so flat-file, Eloquent and custom entry classes all work. Returns `null` for other searchable types (e.g. taxonomy terms).
 
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\RecordUrlTransformer;
 
-'fields' => [
-    'url' => ['transformer' => RecordUrlTransformer::class],
+'fields' => ['url'],
+'transformers' => [
+    'url' => RecordUrlTransformer::class,
 ],
 ```
 
@@ -179,7 +184,7 @@ php artisan algolia:search-index:build-file {index} -T json/csv [-D] [--json-sta
 | `{index}` | The Statamic search index key (must exist in `config/statamic/search.php`) |
 | `-T, --file-type` | Export format: `json` or `csv` |
 | `-D, --dry-run` | Run without writing any files |
-| `--json-stats` | Print min/max/avg record sizes after building (JSON only) |
+| `--json-stats` | Print min/max/avg record sizes after building (JSON only). Reads one JSON array per line. Skipped when no records were exported. |
 
 Files are named `search-index-{index}-{timestamp}.{ext}`. Only the 3 most recent files per index are kept; older files are deleted automatically.
 
@@ -199,13 +204,20 @@ Merges records from multiple Algolia indexes (fetched via the Algolia API) into 
 ],
 ```
 
-> **Note:** `AlgoliaBuildComputedIndexes` uses the Algolia PHP client v3 API. Upgrading to client v4 will require rewriting this command for the new API surface.
+> **Note:** `AlgoliaBuildComputedIndexes` uses the Algolia PHP client v4 API (`^4.32`, per `composer.json`).
 
 ---
 
 ## Index API
 
-The package registers a read-only API endpoint that serves the most recently built index file:
+The package registers a read-only API endpoint that serves the most recently built index file. **It is disabled by default** and returns 404 until you enable it:
+
+```dotenv
+ALGOLIA_SUPPORT_API_ENABLED=true
+ALGOLIA_SUPPORT_API_TOKEN=a-long-random-string
+```
+
+Requests must send `Authorization: Bearer {token}`. A missing, wrong or unset token returns 401. Add `api_middleware` in `config/algolia-support.php` (for example `['throttle:60,1']`) to run more middleware after the token check.
 
 ```
 GET /api/algolia/indexes/{index}
@@ -228,6 +240,11 @@ return [
     // URI prefix for the index retrieval API
     'api_uri'          => env('ALGOLIA_SUPPORT_API_URI', '/algolia/indexes'),
 
+    // Index retrieval API: off by default, bearer token required when on
+    'api_enabled'      => env('ALGOLIA_SUPPORT_API_ENABLED', false),
+    'api_token'        => env('ALGOLIA_SUPPORT_API_TOKEN'),
+    'api_middleware'   => [],
+
     // PHP memory limit for the index builder command
     'memory_limit'     => '2028M',
 
@@ -246,6 +263,6 @@ return [
 | `statamic/cms` constraint | — | Package now supports `^5.0\|^6.0`. Run `composer update`. |
 | Carbon 3 | Low | `DateTransformer` uses `->format()` which is compatible with Carbon 3. Review UTC timezone behavior (see note above). |
 | Search `searchables: all` removed | Medium | Removed in Statamic 6. Replace with `'content'` or an explicit list in your `config/statamic/search.php`. |
-| Algolia PHP client v3 | Pending | `AlgoliaBuildComputedIndexes` uses v3-specific APIs. Monitor whether Statamic 6 or its Algolia driver requires client v4 and update accordingly. |
+| Algolia PHP client v4 | Done | `AlgoliaBuildComputedIndexes` uses the v4 API. Statamic 6 conflicts with client versions below 4.32, so the package requires `^4.32`. |
 | Entry status queries | None | This package does not use `->where('status', ...)`. No action needed. |
 | Vue 3 / Control Panel | None | This package has no Control Panel components. |

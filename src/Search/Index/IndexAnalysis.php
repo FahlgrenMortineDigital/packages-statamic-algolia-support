@@ -6,20 +6,37 @@ use Illuminate\Support\Facades\Storage;
 
 class IndexAnalysis
 {
-    public static function analyzeJsonFile(string $path, string $disk): array
+    /**
+     * The export holds one JSON array per line (one per searchable provider).
+     * Returns null when the file holds no records.
+     */
+    public static function analyzeJsonFile(string $path, string $disk): ?array
     {
         $fileContent = Storage::disk($disk)->get($path);
-        $records = json_decode($fileContent, true);
+        $records = [];
+
+        foreach (preg_split('/\R/', (string) $fileContent) as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+
+            $chunk = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+
+            foreach ($chunk as $record) {
+                $records[] = $record;
+            }
+        }
+
+        if ($records === []) {
+            return null;
+        }
 
         $sizes = array_map([StringAnalysis::class, 'calculateSizeInKB'], array_map('json_encode', $records));
-        $maxSize = max($sizes);
-        $minSize = min($sizes);
-        $avgSize = array_sum($sizes) / count($sizes);
 
         return [
-            'maxSize (kb)' => $maxSize,
-            'minSize (kb)' => $minSize,
-            'avgSize (kb)' => $avgSize,
+            'maxSize (kb)' => max($sizes),
+            'minSize (kb)' => min($sizes),
+            'avgSize (kb)' => array_sum($sizes) / count($sizes),
         ];
     }
 }

@@ -22,8 +22,9 @@ src/
 ├── Console/Commands/
 │   ├── AlgoliaIndexExportBuilder.php   # artisan algolia:search-index:build-file
 │   └── AlgoliaBuildComputedIndexes.php # artisan algolia:build-computed-indexes
-├── Http/Controllers/
-│   └── AlgoliaIndexConnectorController.php  # GET /api/algolia/indexes/{index}
+├── Http/
+│   ├── Controllers/AlgoliaIndexConnectorController.php  # GET /api/algolia/indexes/{index}
+│   └── Middleware/AuthorizeIndexApi.php   # 404 when disabled, bearer token otherwise
 ├── Search/
 │   ├── Index/
 │   │   ├── IndexAnalysis.php           # Computes min/max/avg record sizes from a JSON file
@@ -32,7 +33,7 @@ src/
 │       ├── CollectionTransformer.php   # Collection object → handle string
 │       ├── DateTransformer.php         # Carbon → 'Y-m-d H:i:s' string
 │       ├── MarkupTransformer.php       # Bard/Textarea → plain text
-│       ├── RecordUrlTransformer.php    # Entry/Asset → URL string
+│       ├── RecordUrlTransformer.php    # Entry (contract)/Asset → URL string
 │       ├── TimestampTransformer.php    # Carbon/date string/null → Unix timestamp int|null
 │       └── TaxonomyTransformer.php     # Taxonomy slugs → [{id, slug, title}] array
 ├── Support/
@@ -57,10 +58,13 @@ The `IndexBlobCleaner` matches this pattern with a regex and keeps only the 3 ne
 ### Config keys
 - `algolia-support.disk` — filesystem disk name (not a path) for index file storage
 - `algolia-support.api_uri` — URI prefix for the retrieval API (leading slash is stripped automatically in the provider)
+- `algolia-support.api_enabled` — default `false`. The endpoint returns 404 until enabled.
+- `algolia-support.api_token` — bearer token required when enabled. An empty token rejects every request (401).
+- `algolia-support.api_middleware` — extra middleware run after the token check.
 - `algolia-support.computed_indexes` — map of output index name → `['sources' => [...algolia index names]]`
 
 ### Route registration
-Routes are registered in `StatamicAlgoliaSupportProvider::configureRoutes()` using the `api` middleware group, prefixed at `/api`. The route is: `GET /api/{api_uri}/{index}`.
+Routes are registered in `StatamicAlgoliaSupportProvider::configureRoutes()` using the `api` middleware group plus `AuthorizeIndexApi`, prefixed at `/api`. The route is: `GET /api/{api_uri}/{index}`. The route is always registered. The middleware returns 404 when `api_enabled` is false.
 
 ---
 
@@ -77,7 +81,7 @@ This command uses the v4 API (`Algolia\AlgoliaSearch\Api\SearchClient`):
 Do **not** revert to the v3 `initIndex()` pattern; it no longer exists in v4, and Statamic 6 conflicts with client versions below 4.32.
 
 ### AlgoliaIndexExportBuilder — JSON file format
-The command appends one JSON-encoded array per searchable collection chunk using `Storage::disk()->append()`. The resulting file is **not** a single JSON array — it is multiple JSON arrays concatenated, one per chunk. Downstream consumers must handle this format.
+The command writes one JSON-encoded array per searchable chunk to a temp stream, then stores the file once with `Storage::disk()->put()`. It does not use `append()`. The resulting file is **not** a single JSON array: it is one JSON array per line (newline-separated). Downstream consumers must handle this format. `IndexAnalysis` decodes it line by line and returns `null` for an empty export, so `--json-stats` is skipped.
 
 ### Disk must be defined
 The `algolia-support.disk` config value must match a disk name in `config/filesystems.php`. Both commands validate this at startup and exit with a failure code if the disk is missing.
@@ -103,9 +107,9 @@ Suite requires PHP 8.3+; runtime supports ^8.3. Suite verified on PHP 8.4 with L
 
 ---
 
-## No tests exist
+## Tests
 
-There is no test suite in this package yet. PHPUnit and Orchestra Testbench are listed as dev dependencies, but no test files have been written. When adding tests, use `orchestra/testbench` with a Statamic-aware `TestCase`.
+Pest tests live in `tests/Unit` and `tests/Feature`, on Orchestra Testbench (`tests/TestCase.php`). Run them with `vendor/bin/pest`. Add a test with every change.
 
 ---
 

@@ -69,3 +69,30 @@ it('uses cache to avoid repeat term lookups', function () {
     $transformer->handle(null, 'tags', $entry);
     $transformer->handle(null, 'tags', $entry);
 });
+
+it('locks the record shape the driver builds from the transformer output', function () {
+    $transformer = new TaxonomyTransformer();
+    $repository = Mockery::mock(TermRepository::class);
+    app()->instance(TermRepository::class, $repository);
+
+    $term = Mockery::mock(LocalizedTerm::class);
+    $term->shouldReceive('id')->andReturn('topics_themes::suffrage');
+    $term->shouldReceive('slug')->andReturn('suffrage');
+    $term->shouldReceive('title')->andReturn('Suffrage');
+    $repository->shouldReceive('find')->with('topics_themes::suffrage')->andReturn($term);
+
+    $withTerms = Mockery::mock(EntryContract::class);
+    $withTerms->shouldReceive('get')->with('topics_themes')->andReturn(['suffrage']);
+
+    $withoutTerms = Mockery::mock(EntryContract::class);
+    $withoutTerms->shouldReceive('get')->with('topics_themes')->andReturn([]);
+
+    // Statamic's Searchables::fields() merges an array return into the record.
+    $record = array_merge(['title' => 'A'], $transformer->handle(null, 'topics_themes', $withTerms));
+    $empty = array_merge(['title' => 'B'], $transformer->handle(null, 'topics_themes', $withoutTerms));
+
+    expect($record)->toBe([
+        'title' => 'A',
+        'topics_themes' => [['id' => 'topics_themes::suffrage', 'slug' => 'suffrage', 'title' => 'Suffrage']],
+    ])->and($empty)->toBe(['title' => 'B']);
+});
