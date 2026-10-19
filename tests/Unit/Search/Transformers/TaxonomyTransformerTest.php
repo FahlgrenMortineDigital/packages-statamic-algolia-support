@@ -96,3 +96,25 @@ it('locks the record shape the driver builds from the transformer output', funct
         'topics_themes' => [['id' => 'topics_themes::suffrage', 'slug' => 'suffrage', 'title' => 'Suffrage']],
     ])->and($empty)->toBe(['title' => 'B']);
 });
+
+it('localizes a base term, as the Eloquent driver returns one', function () {
+    $transformer = new TaxonomyTransformer();
+    $entry = Mockery::mock(EntryContract::class);
+    $repository = Mockery::mock(TermRepository::class);
+    app()->instance(TermRepository::class, $repository);
+
+    $localized = Mockery::mock(LocalizedTerm::class);
+    $localized->shouldReceive('id')->andReturn('tags::news');
+    $localized->shouldReceive('slug')->andReturn('news');
+    $localized->shouldReceive('title')->andReturn('News');
+
+    $base = Mockery::mock(\Statamic\Taxonomies\Term::class);
+    $base->shouldReceive('inDefaultLocale')->once()->andReturn($localized);
+
+    $entry->shouldReceive('get')->once()->with('tags')->andReturn(['news']);
+    $repository->shouldReceive('find')->once()->with('tags::news')->andReturn($base);
+
+    expect($transformer->handle(null, 'tags', $entry))->toBe([
+        'tags' => [['id' => 'tags::news', 'slug' => 'news', 'title' => 'News']],
+    ]);
+});
