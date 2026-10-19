@@ -91,7 +91,9 @@ The builder command reads `config('algolia-support.memory_limit')` and applies i
 | Statamic | Laravel | PHP  | Status |
 |----------|---------|------|--------|
 | 5.x      | 11, 12  | 8.3+ | Supported |
-| 6.x      | 12      | 8.3+ | Supported (see notes below) |
+| 6.x      | 12, 13  | 8.3+ | Supported (see notes below) |
+
+Suite requires PHP 8.3+; runtime supports ^8.3. Suite verified on PHP 8.4 with Laravel 11, 12, and 13.
 
 ### Statamic 6 specific notes
 - **Carbon 3**: `DateTransformer` uses `Carbon::format()` which is unchanged in Carbon 3. No action needed, but be aware that Statamic 6 dates now default to UTC.
