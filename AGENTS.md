@@ -33,6 +33,7 @@ src/
 │       ├── DateTransformer.php         # Carbon → 'Y-m-d H:i:s' string
 │       ├── MarkupTransformer.php       # Bard/Textarea → plain text
 │       ├── RecordUrlTransformer.php    # Entry/Asset → URL string
+│       ├── TimestampTransformer.php    # Carbon/date string/null → Unix timestamp int|null
 │       └── TaxonomyTransformer.php     # Taxonomy slugs → [{id, slug, title}] array
 ├── Support/
 │   └── IndexBlobCleaner.php            # Deletes all but the 3 newest index files

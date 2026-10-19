@@ -65,6 +65,36 @@ use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\DateTrans
 
 ---
 
+### TimestampTransformer
+
+Converts a date value into a Unix timestamp (integer seconds, UTC) so Algolia can filter and sort on it numerically. Use it where `DateTransformer` is not enough: Algolia cannot filter a `Y-m-d H:i:s` string numerically.
+
+```php
+use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\TimestampTransformer;
+
+'transformers' => [
+    'date' => TimestampTransformer::class,       // Carbon from Entry::date()
+    'start_date' => TimestampTransformer::class, // stored string, e.g. "2026-11-04"
+],
+```
+
+| Input | Output |
+|---|---|
+| Carbon / DateTime instance | `getTimestamp()` |
+| Date-only string (`2026-11-04`) | Midnight in the app timezone (`config('app.timezone')`), converted to UTC seconds |
+| Datetime string without offset | Read in the app timezone, converted to UTC seconds |
+| Datetime string with offset | Offset respected |
+| `null`, empty string | `null` |
+| Unparseable string, impossible date (`2026-02-31`), relative string (`tomorrow`), other types | `null` |
+
+**Returns:** `int|null`.
+
+Unparseable values return `null` instead of throwing. One bad value must not abort an indexing batch. A non-empty unparseable value logs a warning with the field handle, the searchable id, and the raw value. `null` and empty strings do not log. The record gets no usable timestamp, so filter on a companion boolean if you need to find those records.
+
+Midnight follows the app timezone's offset on that date, so a date on either side of a DST change differs by 23 or 25 hours, not 24.
+
+---
+
 ### MarkupTransformer
 
 Strips HTML from Bard and Textarea fields, returning plain searchable text. For Bard fields, it uses Statamic's `bardText` modifier to properly handle the ProseMirror document structure.
