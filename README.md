@@ -18,9 +18,10 @@ $ php artisan vendor:publish --tag=statamic-algolia-support-config
 
 # Usage
 
-This package focuses on three areas of support for the Algolia driver in Statamic applications:
+This package focuses on four areas of support for the Algolia driver in Statamic applications:
 
 * [Transformers](#transformers)
+* [Applying settings](#applying-settings)
 * [Index building](#indexes)
 * [Index importing (API)](#index-api)
 
@@ -147,6 +148,59 @@ use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\RecordUrl
 ```
 
 **Returns:** `string|null` — the URL for entries and assets, `null` otherwise.
+
+---
+
+## Applying settings
+
+Statamic's Algolia driver sends an index's `settings` key to the primary index only. It never sets a replica's own ranking, and it never prefixes replica names. `algolia:apply-settings` closes both gaps from config.
+
+```shell
+php artisan algolia:apply-settings {index?} [--dry-run] [--max-records=N]
+```
+
+| Option | Description |
+|---|---|
+| `{index}` | Statamic index handle (the key in `config/statamic/search.php`). Omit to run every index whose driver is `algolia`. |
+| `--dry-run` | Print the payload for each index and replica. Makes no Algolia calls, so the diff and `--max-records` are skipped. |
+| `--max-records=N` | Read the primary's record count, multiply by `1 + standard replicas`, and fail before any write if the result exceeds `N`. Virtual replicas are not counted. |
+
+### Config
+
+Put `replicas` beside `settings` in the index config. Do not put it inside `settings`: the driver sends `settings` to Algolia as written, so replica names would go out unprefixed.
+
+```php
+// config/statamic/search.php
+'content' => [
+    'driver' => 'algolia',
+    'searchables' => ['collection:articles'],
+    'fields' => ['title', 'date'],
+    'settings' => [                     // primary settings. The driver also sends these.
+        'searchableAttributes' => ['title', 'summary'],
+        'attributesForFaceting' => ['filterOnly(collection)'],
+        'customRanking' => ['desc(date_ts)'],
+    ],
+    'replicas' => [                     // read only by algolia:apply-settings
+        // Standard replica: its own settings, keyed by unprefixed name.
+        'title_asc' => ['ranking' => ['asc(title)', 'typo', 'geo', 'words', 'filters', 'proximity', 'attribute', 'exact', 'custom']],
+        // Virtual replica: customRanking and relevancyStrictness only.
+        'virtual(date_desc)' => ['customRanking' => ['desc(date_ts)']],
+        // A bare string is a standard replica with no overrides.
+        'start_date_asc',
+    ],
+],
+```
+
+For each index the command:
+
+1. Resolves the primary and every replica name through `Index::resolveNameUsing`, so a prefix applies to both.
+2. Sends the primary `settings` plus the prefixed `replicas` list, in Algolia's `virtual(name)` syntax for virtual replicas.
+3. Applies each replica's settings. A standard replica gets the primary's `settings` merged with its own overrides (overrides win), because Algolia copies the primary only when it creates a replica. A virtual replica gets only its own overrides and inherits the rest.
+4. Prints a current-vs-desired diff per setting key and calls `setSettings` only when something differs. A second run changes nothing. The command compares only the keys you configure, and it always replaces the primary's `replicas` list with the configured one.
+
+It fails, before any call, when `settings` contains `replicas`, a virtual replica carries other keys, or a replica is listed twice. The command uses the Algolia client v4 and the credentials from the index config.
+
+> **Driver behavior:** `search:update` clears the index, then re-sends `settings` (without `replicas`). Algolia treats that as a partial update, so replicas survive. Standard replicas are emptied and refilled with the primary. Run `algolia:apply-settings` after changing `settings` or `replicas`.
 
 ---
 

@@ -12,6 +12,7 @@ This file gives AI coding agents (Claude Code, Copilot, Cursor, etc.) the contex
 2. **Index export builder** — Artisan commands that snapshot a Statamic search index to a JSON or CSV file on a filesystem disk.
 3. **Computed index builder** — Merges records from multiple Algolia indexes (fetched via the Algolia API) into a single combined JSON file.
 4. **Index retrieval API** — A read-only HTTP endpoint that serves the most recently built index file to downstream consumers.
+5. **Settings applier** — `algolia:apply-settings` applies primary and replica settings from config, with prefixed names.
 
 ---
 
@@ -20,6 +21,7 @@ This file gives AI coding agents (Claude Code, Copilot, Cursor, etc.) the contex
 ```
 src/
 ├── Console/Commands/
+│   ├── AlgoliaApplySettings.php        # artisan algolia:apply-settings
 │   ├── AlgoliaIndexExportBuilder.php   # artisan algolia:search-index:build-file
 │   └── AlgoliaBuildComputedIndexes.php # artisan algolia:build-computed-indexes
 ├── Http/
@@ -79,6 +81,29 @@ This command uses the v4 API (`Algolia\AlgoliaSearch\Api\SearchClient`):
 - `$client->browseObjects($indexName)` — replaces v3's `initIndex()->browseObjects()`
 
 Do **not** revert to the v3 `initIndex()` pattern; it no longer exists in v4, and Statamic 6 conflicts with client versions below 4.32.
+
+### AlgoliaApplySettings — settings and replicas
+`php artisan algolia:apply-settings {index?} [--dry-run] [--max-records=N]`. No argument runs every index whose driver is `algolia`. Config shape, per index in `config/statamic/search.php`:
+
+```php
+'content' => [
+    'driver' => 'algolia',
+    'settings' => ['searchableAttributes' => ['title'], 'attributesForFaceting' => ['filterOnly(collection)']],
+    'replicas' => [
+        'title_asc' => ['ranking' => ['asc(title)', 'typo', 'geo', 'words', 'filters', 'proximity', 'attribute', 'exact', 'custom']],
+        'virtual(date_desc)' => ['customRanking' => ['desc(date_ts)']],
+        'start_date_asc', // bare string: standard replica, no overrides
+    ],
+],
+```
+
+Rules that are easy to break:
+- `replicas` sits **beside** `settings`, never inside it. The driver (`Statamic\Search\Algolia\Index`) sends `settings` to Algolia as written, on index creation and on every `search:update`, so a `replicas` list inside it would go out unprefixed. Statamic ignores the extra `replicas` key. The command rejects `settings.replicas`.
+- Names resolve through `Index::resolveNameUsing`. Replica names use `new NullIndex($handle, [], $locale)->name()` so the same callback runs. The callback is protected static, so do not read it directly.
+- A standard replica's desired settings are the primary's `settings` merged with its overrides. It copies the primary only at creation, and the command passes `forwardToReplicas: false`. A virtual replica gets only `customRanking` and `relevancyStrictness`.
+- `setSettings` runs only when the diff is non-empty. Keep that: idempotency is a test.
+- `--dry-run` makes no client calls, so `--max-records` is skipped under it.
+- The command resolves `IndexManager` from the container. Tests bind it and stub `Sites`, because Statamic's provider is not loaded in the test app. Tests inject a fake client by overriding `makeSearchClient()`.
 
 ### AlgoliaIndexExportBuilder — JSON file format
 The command writes one JSON-encoded array per searchable chunk to a temp stream, then stores the file once with `Storage::disk()->put()`. It does not use `append()`. The resulting file is **not** a single JSON array: it is one JSON array per line (newline-separated). Downstream consumers must handle this format. `IndexAnalysis` decodes it line by line and returns `null` for an empty export, so `--json-stats` is skipped.
