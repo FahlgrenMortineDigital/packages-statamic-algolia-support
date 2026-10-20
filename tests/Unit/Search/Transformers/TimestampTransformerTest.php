@@ -81,3 +81,32 @@ it('does not log for null or empty string', function () {
 
     Log::shouldNotHaveReceived('warning');
 });
+
+it('rejects impossible and relative datetime strings and logs them', function (string $value) {
+    Log::spy();
+
+    expect($this->transformer->handle($value, 'start_date', null))->toBeNull();
+
+    Log::shouldHaveReceived('warning')->once()->with(
+        Mockery::type('string'),
+        ['field' => 'start_date', 'searchable_id' => null, 'value' => $value],
+    );
+})->with([
+    '2026-02-31 10:30:00',
+    '2026-02-31T10:30:00+05:00',
+    '2026-11-04 +1 day',
+]);
+
+it('still accepts valid datetime strings', function (string $value, string $expected) {
+    Log::spy();
+
+    expect($this->transformer->handle($value, 'start_date', null))
+        ->toBe(Carbon::parse($expected, 'UTC')->getTimestamp());
+
+    Log::shouldNotHaveReceived('warning');
+})->with([
+    'no offset' => ['2026-11-04 10:30:00', '2026-11-04 15:30:00'],
+    'offset' => ['2026-11-04T10:30:00+05:00', '2026-11-04 05:30:00'],
+    'zulu' => ['2026-11-04T10:30:00Z', '2026-11-04 10:30:00'],
+    'no seconds' => ['2026-11-04 10:30', '2026-11-04 15:30'],
+]);

@@ -88,7 +88,9 @@ use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\Timestamp
 | Datetime string without offset | Read in the app timezone, converted to UTC seconds |
 | Datetime string with offset | Offset respected |
 | `null`, empty string | `null` |
-| Unparseable string, impossible date (`2026-02-31`), relative string (`tomorrow`), other types | `null` |
+| Unparseable string, other types | `null` |
+| Impossible date or datetime (`2026-02-31`, `2026-02-31 10:30:00`, `2026-02-31T10:30:00+05:00`) | `null` |
+| Relative string (`tomorrow`, `2026-11-04 +1 day`) | `null` |
 
 **Returns:** `int|null`.
 

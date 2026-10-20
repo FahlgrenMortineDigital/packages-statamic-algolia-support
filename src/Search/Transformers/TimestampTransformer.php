@@ -62,6 +62,13 @@ class TimestampTransformer
                 return $date && $date->format('Y-m-d') === $value ? $date->getTimestamp() : null;
             }
 
+            // Carbon::parse rolls impossible dates over and reads "+1 day" as an offset. Reject both.
+            $parts = date_parse($value);
+
+            if ($parts['warning_count'] > 0 || $parts['error_count'] > 0 || isset($parts['relative'])) {
+                return null;
+            }
+
             return Carbon::parse($value, $timezone)->getTimestamp();
         } catch (Throwable) {
             return null;
