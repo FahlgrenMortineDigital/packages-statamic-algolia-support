@@ -197,7 +197,16 @@ For each index the command:
 2. Sends the primary `settings` plus the prefixed `replicas` list, in Algolia's `virtual(name)` syntax for virtual replicas.
 3. Applies each replica's settings. A standard replica gets the primary's `settings` merged with its own overrides (overrides win), because Algolia copies the primary only when it creates a replica. A virtual replica gets only its own overrides and inherits the rest.
 4. Waits for each `setSettings` task to finish before the next call (the primary, then each replica). Algolia applies settings asynchronously, so a replica call sent early can hit an index that does not exist yet.
-5. Prints a current-vs-desired diff per setting key and calls `setSettings` only when something differs. A second run changes nothing. The command compares only the keys you configure, and it always replaces the primary's `replicas` list with the configured one.
+5. Prints a current-vs-desired diff per setting key and calls `setSettings` only when something differs. A second run changes nothing. The command compares only the keys you configure.
+
+#### Absent vs empty `replicas`
+
+- **Key absent.** The index is unmanaged. The command sends no `replicas` and leaves dashboard replicas alone.
+- **Key present.** The command always sends the resolved list, even when it is empty (`'replicas' => []`). Replicas missing from the list detach.
+
+When the diff removes replicas, the command prints each detached name and warns. `--dry-run` cannot read the current list, so it prints the payload and the same warning without names.
+
+> **Cleanup:** A detached standard replica stays a standalone index. It still holds records and counts toward usage. Delete it by hand in the Algolia dashboard. A detached virtual replica holds no records of its own.
 
 It fails, before any call, when `settings` contains `replicas`, a virtual replica carries other keys, or a replica is listed twice. The command uses the Algolia client v4 and the credentials from the index config.
 

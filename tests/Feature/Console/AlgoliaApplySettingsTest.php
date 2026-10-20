@@ -323,3 +323,50 @@ it('does not wait when nothing changed', function () {
 
     expect(array_column($client->calls, 0))->not->toContain('waitForTask');
 });
+
+it('detaches replicas removed from config and warns about the leftover index', function () {
+    $client = new FakeSettingsClient;
+    runApplySettings($client)->assertSuccessful();
+
+    defineContentIndex(['replicas' => []]);
+    app()->forgetInstance(IndexManager::class);
+    $client->calls = [];
+
+    runApplySettings($client)
+        ->expectsOutputToContain('detach title_asc')
+        ->expectsOutputToContain('detach virtual(date_desc)')
+        ->expectsOutputToContain('stays a standalone index')
+        ->assertSuccessful();
+
+    $writes = $client->writes();
+
+    expect($writes)->toHaveCount(1)
+        ->and($writes[0][2]['replicas'])->toBe([])
+        ->and($client->indexes['content']['replicas'])->toBe([]);
+});
+
+it('sends no replicas key when the config has none', function () {
+    $config = config('statamic.search.indexes.content');
+    unset($config['replicas']);
+    config()->set('statamic.search.indexes.content', $config);
+    $client = new FakeSettingsClient;
+    $client->indexes['content'] = ['replicas' => ['dashboard_made']];
+
+    runApplySettings($client)->assertSuccessful();
+
+    expect($client->writes()[0][2])->not->toHaveKey('replicas')
+        ->and($client->indexes['content']['replicas'])->toBe(['dashboard_made']);
+});
+
+it('prints the detach on a dry run with an empty replicas list', function () {
+    defineContentIndex(['replicas' => []]);
+    $client = new FakeSettingsClient;
+
+    runApplySettings($client, ['--dry-run' => true])
+        ->expectsOutputToContain('"replicas":[]')
+        ->expectsOutputToContain('detaches')
+        ->expectsOutputToContain('stays a standalone index')
+        ->assertSuccessful();
+
+    expect($client->calls)->toBeEmpty();
+});

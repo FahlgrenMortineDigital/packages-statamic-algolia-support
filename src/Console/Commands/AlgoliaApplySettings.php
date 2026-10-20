@@ -144,7 +144,8 @@ class AlgoliaApplySettings extends Command
 
         $primary = $settings;
 
-        if ($replicas !== []) {
+        // An absent key leaves the primary's replicas alone. A present key, even empty, is sent as is.
+        if (array_key_exists('replicas', $config)) {
             $primary['replicas'] = array_map(
                 fn ($r) => $r['virtual'] ? "virtual({$r['name']})" : $r['name'],
                 $replicas
@@ -158,6 +159,7 @@ class AlgoliaApplySettings extends Command
             'primary' => $primary,
             'replicas' => $replicas,
             'standard' => $standardCount,
+            'managed' => array_key_exists('replicas', $config),
         ];
     }
 
@@ -188,6 +190,11 @@ class AlgoliaApplySettings extends Command
         foreach ($targets as $target) {
             $this->info("> [{$target['name']}] primary");
             $this->line($this->json($target['primary']));
+
+            if ($target['managed']) {
+                $this->line('  replicas: any replica attached now and not listed above detaches.');
+                $this->warn($this->detachWarning());
+            }
 
             foreach ($target['replicas'] as $replica) {
                 $this->info("> [{$replica['name']}] " . ($replica['virtual'] ? 'virtual' : 'standard') . ' replica');
@@ -265,6 +272,10 @@ class AlgoliaApplySettings extends Command
             $this->line('    + ' . $this->json($value));
         }
 
+        if (isset($changed['replicas'])) {
+            $this->reportDetached($current['replicas'] ?? [], $changed['replicas']);
+        }
+
         // Algolia applies settings asynchronously. Replicas are created from the
         // primary's task, so the next call must wait for this one to finish.
         $task = $this->normalize($client->setSettings($name, $changed, false));
@@ -272,6 +283,32 @@ class AlgoliaApplySettings extends Command
         if (isset($task['taskID'])) {
             $client->waitForTask($name, $task['taskID']);
         }
+    }
+
+    /**
+     * @param array<int, string> $current
+     * @param array<int, string> $desired
+     */
+    private function reportDetached(array $current, array $desired): void
+    {
+        $detached = array_values(array_diff($current, $desired));
+
+        if ($detached === []) {
+            return;
+        }
+
+        foreach ($detached as $name) {
+            $this->line("  detach {$name}");
+        }
+
+        if (array_filter($detached, fn ($name) => ! str_starts_with($name, 'virtual('))) {
+            $this->warn($this->detachWarning());
+        }
+    }
+
+    private function detachWarning(): string
+    {
+        return 'A detached standard replica stays a standalone index. It still holds records and counts toward usage. Delete it by hand.';
     }
 
     private function currentSettings(object $client, string $name): array
