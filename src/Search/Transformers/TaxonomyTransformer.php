@@ -5,6 +5,7 @@ namespace Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers;
 use Statamic\Contracts\Entries\Entry as EntryContract;
 use Statamic\Facades\Term;
 use Statamic\Taxonomies\LocalizedTerm;
+use Statamic\Taxonomies\Term as BaseTerm;
 
 class TaxonomyTransformer
 {
@@ -36,7 +37,10 @@ class TaxonomyTransformer
     private function fetchCachedTerm(string $key): ?LocalizedTerm
     {
         return cache()->remember("algolia.taxonomy_term.{$key}", 3600, function () use ($key) {
-            return Term::find($key);
+            $term = Term::find($key);
+
+            // The Eloquent driver returns the base term, not a localized one.
+            return $term instanceof BaseTerm ? $term->inDefaultLocale() : $term;
         });
     }
 }

@@ -158,8 +158,13 @@ class AlgoliaIndexExportBuilder extends Command
         if($json_stats && $file_type === 'json') {
             $this->output->newLine();
             $this->info("> Analyzing JSON file");
-            $data = IndexAnalysis::analyzeJsonFile($file_name, $disk);
-            $this->table(array_keys($data), [array_values($data)]);
+            $data = $is_first_json_chunk ? null : IndexAnalysis::analyzeJsonFile($file_name, $disk);
+
+            if ($data === null) {
+                $this->warn('No records exported. Skipping stats.');
+            } else {
+                $this->table(array_keys($data), [array_values($data)]);
+            }
         }
 
         return SymfonyCommand::SUCCESS;

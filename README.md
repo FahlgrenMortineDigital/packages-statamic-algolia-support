@@ -2,7 +2,7 @@
 
 Add helpful support classes for working with the Algolia driver in Statamic applications.
 
-**Compatibility:** Statamic 5.x and 6.x | Laravel 11.x and 12.x | PHP 8.3+
+**Compatibility:** Statamic 5.x and 6.x | Laravel 11.x, 12.x and 13.x | PHP 8.3+
 
 # Installation
 
@@ -18,9 +18,10 @@ $ php artisan vendor:publish --tag=statamic-algolia-support-config
 
 # Usage
 
-This package focuses on three areas of support for the Algolia driver in Statamic applications:
+This package focuses on four areas of support for the Algolia driver in Statamic applications:
 
 * [Transformers](#transformers)
+* [Applying settings](#applying-settings)
 * [Index building](#indexes)
 * [Index importing (API)](#index-api)
 
@@ -28,7 +29,7 @@ This package focuses on three areas of support for the Algolia driver in Statami
 
 ## Transformers
 
-Transformers are Statamic [search transformers](https://statamic.dev/search#transforming-fields) that convert complex Statamic field types into Algolia-compatible formats. Register them in your `config/statamic/search.php` under a field's `transformer` key.
+Transformers are Statamic [search transformers](https://statamic.dev/search#transforming-fields) that convert complex Statamic field types into Algolia-compatible formats. Register them in your `config/statamic/search.php`. Statamic reads `fields` as a flat list of field handles and `transformers` as a map of field handle to class.
 
 ### CollectionTransformer
 
@@ -38,8 +39,9 @@ Extracts the `handle` string from a collection object. Useful for configuring Al
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\CollectionTransformer;
 
 // In config/statamic/search.php
-'fields' => [
-    'collection' => ['transformer' => CollectionTransformer::class],
+'fields' => ['collection'],
+'transformers' => [
+    'collection' => CollectionTransformer::class,
 ],
 ```
 
@@ -54,14 +56,47 @@ Converts a Carbon date object into a formatted date string (`Y-m-d H:i:s`). Comp
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\DateTransformer;
 
-'fields' => [
-    'date' => ['transformer' => DateTransformer::class],
+'fields' => ['date'],
+'transformers' => [
+    'date' => DateTransformer::class,
 ],
 ```
 
 **Returns:** `string|null` — formatted date string, or passes through non-Carbon values unchanged.
 
 > **Statamic 6 note:** Statamic 6 requires Carbon 3. Dates now convert to UTC at runtime. If your app uses a non-UTC timezone, configure `'localize_dates_in_modifiers' => true` in `config/statamic/system.php`.
+
+---
+
+### TimestampTransformer
+
+Converts a date value into a Unix timestamp (integer seconds, UTC) so Algolia can filter and sort on it numerically. Use it where `DateTransformer` is not enough: Algolia cannot filter a `Y-m-d H:i:s` string numerically.
+
+```php
+use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\TimestampTransformer;
+
+'transformers' => [
+    'date' => TimestampTransformer::class,       // Carbon from Entry::date()
+    'start_date' => TimestampTransformer::class, // stored string, e.g. "2026-11-04"
+],
+```
+
+| Input | Output |
+|---|---|
+| Carbon / DateTime instance | `getTimestamp()` |
+| Date-only string (`2026-11-04`) | Midnight in the app timezone (`config('app.timezone')`), converted to UTC seconds |
+| Datetime string without offset | Read in the app timezone, converted to UTC seconds |
+| Datetime string with offset | Offset respected |
+| `null`, empty string | `null` |
+| Unparseable string, other types | `null` |
+| Impossible date or datetime (`2026-02-31`, `2026-02-31 10:30:00`, `2026-02-31T10:30:00+05:00`) | `null` |
+| Relative string (`tomorrow`, `2026-11-04 +1 day`) | `null` |
+
+**Returns:** `int|null`.
+
+Unparseable values return `null` instead of throwing. One bad value must not abort an indexing batch. A non-empty unparseable value logs a warning with the field handle, the searchable id, and the raw value. `null` and empty strings do not log. The record gets no usable timestamp, so filter on a companion boolean if you need to find those records.
+
+Midnight follows the app timezone's offset on that date, so a date on either side of a DST change differs by 23 or 25 hours, not 24.
 
 ---
 
@@ -72,8 +107,9 @@ Strips HTML from Bard and Textarea fields, returning plain searchable text. For 
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\MarkupTransformer;
 
-'fields' => [
-    'content' => ['transformer' => MarkupTransformer::class], // Bard or Textarea
+'fields' => ['content'],
+'transformers' => [
+    'content' => MarkupTransformer::class, // Bard or Textarea
 ],
 ```
 
@@ -90,28 +126,93 @@ Works with both flat-file entries and Eloquent entries.
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\TaxonomyTransformer;
 
-'fields' => [
-    'tags' => ['transformer' => TaxonomyTransformer::class],
+'fields' => ['tags'],
+'transformers' => [
+    'tags' => TaxonomyTransformer::class,
 ],
 ```
 
-**Returns:** `array|null` — `['tags' => [['id' => ..., 'slug' => ..., 'title' => ...], ...]]`, or `null` for non-entry searchables, or `[]` for entries with no terms.
+**Returns:** `array|null` — `['tags' => [['id' => ..., 'slug' => ..., 'title' => ...], ...]]`, or `null` for non-entry searchables. Entries with no terms return `[]`, which Statamic spreads into the record, so the record gets no attribute.
 
 ---
 
 ### RecordUrlTransformer
 
-Generates the URL for an Entry or Asset searchable. Returns `null` for other searchable types (e.g. taxonomy terms).
+Generates the URL for an Entry or Asset searchable. Entries are matched on the `Statamic\Contracts\Entries\Entry` contract, so flat-file, Eloquent and custom entry classes all work. Returns `null` for other searchable types (e.g. taxonomy terms).
 
 ```php
 use Fahlgrendigital\PackagesStatamicAlgoliaSupport\Search\Transformers\RecordUrlTransformer;
 
-'fields' => [
-    'url' => ['transformer' => RecordUrlTransformer::class],
+'fields' => ['url'],
+'transformers' => [
+    'url' => RecordUrlTransformer::class,
 ],
 ```
 
 **Returns:** `string|null` — the URL for entries and assets, `null` otherwise.
+
+---
+
+## Applying settings
+
+Statamic's Algolia driver sends an index's `settings` key to the primary index only. It never sets a replica's own ranking, and it never prefixes replica names. `algolia:apply-settings` closes both gaps from config.
+
+```shell
+php artisan algolia:apply-settings {index?} [--dry-run] [--max-records=N]
+```
+
+| Option | Description |
+|---|---|
+| `{index}` | Statamic index handle (the key in `config/statamic/search.php`). Omit to run every index whose driver is `algolia`. |
+| `--dry-run` | Print the payload for each index and replica. Makes no Algolia calls, so the diff and `--max-records` are skipped. |
+| `--max-records=N` | Read the primary's record count, multiply by `1 + standard replicas`, and fail before any write if the result exceeds `N`. Virtual replicas are not counted. |
+
+### Config
+
+Put `replicas` beside `settings` in the index config. Do not put it inside `settings`: the driver sends `settings` to Algolia as written, so replica names would go out unprefixed.
+
+```php
+// config/statamic/search.php
+'content' => [
+    'driver' => 'algolia',
+    'searchables' => ['collection:articles'],
+    'fields' => ['title', 'date'],
+    'settings' => [                     // primary settings. The driver also sends these.
+        'searchableAttributes' => ['title', 'summary'],
+        'attributesForFaceting' => ['filterOnly(collection)'],
+        'customRanking' => ['desc(date_ts)'],
+    ],
+    'replicas' => [                     // read only by algolia:apply-settings
+        // Standard replica: its own settings, keyed by unprefixed name.
+        'title_asc' => ['ranking' => ['asc(title)', 'typo', 'geo', 'words', 'filters', 'proximity', 'attribute', 'exact', 'custom']],
+        // Virtual replica: customRanking and relevancyStrictness only.
+        'virtual(date_desc)' => ['customRanking' => ['desc(date_ts)']],
+        // A bare string is a standard replica with no overrides.
+        'start_date_asc',
+    ],
+],
+```
+
+For each index the command:
+
+1. Resolves the primary and every replica name through `Index::resolveNameUsing`, so a prefix applies to both.
+2. Sends the primary `settings` plus the prefixed `replicas` list, in Algolia's `virtual(name)` syntax for virtual replicas.
+3. Applies each replica's settings. A standard replica gets the primary's `settings` merged with its own overrides (overrides win), because Algolia copies the primary only when it creates a replica. A virtual replica gets only its own overrides and inherits the rest.
+4. Waits for each `setSettings` task to finish before the next call (the primary, then each replica). Algolia applies settings asynchronously, so a replica call sent early can hit an index that does not exist yet.
+5. Prints a current-vs-desired diff per setting key and calls `setSettings` only when something differs. A second run changes nothing. The command compares only the keys you configure.
+
+#### Absent vs empty `replicas`
+
+- **Key absent.** The index is unmanaged. The command sends no `replicas` and leaves dashboard replicas alone.
+- **Key present.** The command always sends the resolved list, even when it is empty (`'replicas' => []`). Replicas missing from the list detach.
+
+When the diff removes replicas, the command prints each detached name and warns. `--dry-run` cannot read the current list, so it prints the payload and the same warning without names.
+
+> **Cleanup:** A detached standard replica stays a standalone index. It still holds records and counts toward usage. Delete it by hand in the Algolia dashboard. A detached virtual replica holds no records of its own.
+
+It fails, before any call, when `settings` contains `replicas`, a virtual replica carries other keys, or a replica is listed twice. The command uses the Algolia client v4 and the credentials from the index config.
+
+> **Driver behavior:** `search:update` clears the index, then re-sends `settings` (without `replicas`). Algolia treats that as a partial update, so replicas survive. Standard replicas are emptied and refilled with the primary. Run `algolia:apply-settings` after changing `settings` or `replicas`.
 
 ---
 
@@ -149,7 +250,7 @@ php artisan algolia:search-index:build-file {index} -T json/csv [-D] [--json-sta
 | `{index}` | The Statamic search index key (must exist in `config/statamic/search.php`) |
 | `-T, --file-type` | Export format: `json` or `csv` |
 | `-D, --dry-run` | Run without writing any files |
-| `--json-stats` | Print min/max/avg record sizes after building (JSON only) |
+| `--json-stats` | Print min/max/avg record sizes after building (JSON only). Reads one JSON array per line. Skipped when no records were exported. |
 
 Files are named `search-index-{index}-{timestamp}.{ext}`. Only the 3 most recent files per index are kept; older files are deleted automatically.
 
@@ -169,13 +270,20 @@ Merges records from multiple Algolia indexes (fetched via the Algolia API) into 
 ],
 ```
 
-> **Note:** `AlgoliaBuildComputedIndexes` uses the Algolia PHP client v3 API. Upgrading to client v4 will require rewriting this command for the new API surface.
+> **Note:** `AlgoliaBuildComputedIndexes` uses the Algolia PHP client v4 API (`^4.32`, per `composer.json`).
 
 ---
 
 ## Index API
 
-The package registers a read-only API endpoint that serves the most recently built index file:
+The package registers a read-only API endpoint that serves the most recently built index file. **It is disabled by default** and returns 404 until you enable it:
+
+```dotenv
+ALGOLIA_SUPPORT_API_ENABLED=true
+ALGOLIA_SUPPORT_API_TOKEN=a-long-random-string
+```
+
+Requests must send `Authorization: Bearer {token}`. A missing, wrong or unset token returns 401. Add `api_middleware` in `config/algolia-support.php` (for example `['throttle:60,1']`) to run more middleware after the token check.
 
 ```
 GET /api/algolia/indexes/{index}
@@ -198,6 +306,11 @@ return [
     // URI prefix for the index retrieval API
     'api_uri'          => env('ALGOLIA_SUPPORT_API_URI', '/algolia/indexes'),
 
+    // Index retrieval API: off by default, bearer token required when on
+    'api_enabled'      => env('ALGOLIA_SUPPORT_API_ENABLED', false),
+    'api_token'        => env('ALGOLIA_SUPPORT_API_TOKEN'),
+    'api_middleware'   => [],
+
     // PHP memory limit for the index builder command
     'memory_limit'     => '2028M',
 
@@ -216,6 +329,6 @@ return [
 | `statamic/cms` constraint | — | Package now supports `^5.0\|^6.0`. Run `composer update`. |
 | Carbon 3 | Low | `DateTransformer` uses `->format()` which is compatible with Carbon 3. Review UTC timezone behavior (see note above). |
 | Search `searchables: all` removed | Medium | Removed in Statamic 6. Replace with `'content'` or an explicit list in your `config/statamic/search.php`. |
-| Algolia PHP client v3 | Pending | `AlgoliaBuildComputedIndexes` uses v3-specific APIs. Monitor whether Statamic 6 or its Algolia driver requires client v4 and update accordingly. |
+| Algolia PHP client v4 | Done | `AlgoliaBuildComputedIndexes` uses the v4 API. Statamic 6 conflicts with client versions below 4.32, so the package requires `^4.32`. |
 | Entry status queries | None | This package does not use `->where('status', ...)`. No action needed. |
 | Vue 3 / Control Panel | None | This package has no Control Panel components. |

@@ -17,6 +17,18 @@ return [
 
     /**
      * ----------------------------------------------------------------
+     * The index retrieval API is off by default. When enabled, requests
+     * need `Authorization: Bearer {api_token}`. An empty token rejects
+     * every request. `api_middleware` runs after the token check
+     * (for example `['throttle:60,1']`).
+     * ----------------------------------------------------------------
+     */
+    'api_enabled' => env('ALGOLIA_SUPPORT_API_ENABLED', false),
+    'api_token' => env('ALGOLIA_SUPPORT_API_TOKEN'),
+    'api_middleware' => [],
+
+    /**
+     * ----------------------------------------------------------------
      * The memory limit for the Algolia index export builder command.
      * ----------------------------------------------------------------
      */
